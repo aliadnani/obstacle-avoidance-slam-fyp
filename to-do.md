@@ -1,6 +1,6 @@
 # Roadmap
 
-## Completed 
+## Completed Over Winter
 
 - Set up Jetson Nano with ROS
 - Test Google Cartographer with RPLidar
@@ -14,17 +14,21 @@
 
 **Electronics**
 - Power motors w/ motor driver, Arduino, and 12V battery **(DONE)**
-- Establish link between Arduino & ROS@Jetson Nano
-- Move motors: ROS@Jetson Nano -> Arduino -> Motor Driver -> Motor
+- Establish link between Arduino & ROS@Jetson Nano **(DONE)**
+- Move motors: ROS@Jetson Nano -> Arduino -> Motor Driver -> Motor **(DONE)**
 - Set up motor rotary encoders to send odometry to ROS **(NO NEED)**
 
 **Assembly**
   - Once electronics is completed, assemble everything. **(DONE)**
 
 **Testing**
-  - Test Google Cartographer to map a room **(HALF DONE)**
+  - Test Google Cartographer to map a room 
 
 ## Week 2-3
+
+**Extras**
+- Write a Keyboard listener to control robot like video game
+- Set up multi machine ROS environment 
 
 Our contribution to SLAM starts here.
 
@@ -53,8 +57,7 @@ Our contribution to SLAM starts here.
 **Testing**
 - Make sure everything works
 
-## Week 3-4
-
+## Week 3-4 
 **Results**
 - Set up experiments and quantifiable tests
 - Quantify results
