@@ -38,6 +38,15 @@ void messageCb(const geometry_msgs::Twist &cmd_msg)
     { // izquierda
       goForward(255);
     }
+    else if (cmd_msg.linear.z > 0.0)
+    { // izquierda
+      turnRight(255);
+    }
+    else if (cmd_msg.linear.z > 0.0)
+    { // izquierda
+      turnLeft(255);
+    }
+    
   }
 }
 
@@ -70,11 +79,25 @@ void goForward(int speed) //run both motors in the same direction
   analogWrite(EnB, speed);
 }
 
-void goBackward(int speed) //run both motors in the same direction
+void turnRight(int speed) //run both motors in the same direction
 {
   // turn on motor A
   digitalWrite(In2, HIGH);
   digitalWrite(In1, LOW);
+  // set speed to 150 out 255
+  analogWrite(EnA, speed);
+  // turn on motor B
+  digitalWrite(In4, LOW);
+  digitalWrite(In3, HIGH);
+  // set speed to 150 out 255
+  analogWrite(EnB, speed);
+}
+
+void turnLeft(int speed) //run both motors in the same direction
+{
+  // turn on motor A
+  digitalWrite(In2, LOW);
+  digitalWrite(In1, HIGH);
   // set speed to 150 out 255
   analogWrite(EnA, speed);
   // turn on motor B
