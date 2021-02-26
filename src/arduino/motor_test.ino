@@ -7,8 +7,7 @@
 #define In2 19
 #define In3 20
 #define In4 21
- asmasd
- 
+
 void setup()
 {
   // All motor control pins are outputs
@@ -19,7 +18,7 @@ void setup()
   pinMode(In3, OUTPUT);
   pinMode(In4, OUTPUT);
 }
-void goStraight()   //run both motors in the same direction
+void goStraight() //run both motors in the same direction
 {
   // turn on motor A
   digitalWrite(In1, HIGH);
@@ -34,10 +33,11 @@ void goStraight()   //run both motors in the same direction
   delay(2000);
   // now turn off motors
   digitalWrite(In1, LOW);
-  digitalWrite(In2, LOW);  
+  digitalWrite(In2, LOW);
   digitalWrite(In3, LOW);
   digitalWrite(In4, LOW);
 }
+
 void loop()
 {
   goStraight();

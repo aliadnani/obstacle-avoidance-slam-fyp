@@ -21,7 +21,7 @@ ros::NodeHandle nh;
 void messageCb(const geometry_msgs::Twist &cmd_msg)
 {
 
-  if (cmd_msg.linear.x == 0)
+  if (cmd_msg.linear.x == 0 && cmd_msg.angular.z == 0)
   {
     digitalWrite(In1, LOW);
     digitalWrite(In2, LOW);
@@ -38,11 +38,11 @@ void messageCb(const geometry_msgs::Twist &cmd_msg)
     { // izquierda
       goForward(255);
     }
-    else if (cmd_msg.linear.z > 0.0)
+    else if (cmd_msg.angular.z > 0.0)
     { // izquierda
       turnRight(255);
     }
-    else if (cmd_msg.linear.z > 0.0)
+    else if (cmd_msg.angular.z < 0.0)
     { // izquierda
       turnLeft(255);
     }
@@ -63,6 +63,21 @@ void setup()
   nh.getHardware()->setBaud(9600);
   nh.initNode();
   nh.subscribe(sub_vel);
+}
+
+
+void goBackward(int speed) //run both motors in the same direction
+{
+  // turn on motor A
+  digitalWrite(In2, HIGH);
+  digitalWrite(In1, LOW);
+  // set speed to 150 out 255
+  analogWrite(EnA, speed);
+  // turn on motor B
+  digitalWrite(In4, HIGH);
+  digitalWrite(In3, LOW);
+  // set speed to 150 out 255
+  analogWrite(EnB, speed);
 }
 
 void goForward(int speed) //run both motors in the same direction
