@@ -6,6 +6,8 @@ Only supports forwards and backwards movement right now */
 #include <geometry_msgs/Twist.h>
 #include <sensor_msgs/Range.h>
 #include <std_msgs/String.h>
+#include <Encoder.h>
+#include <PID_v1.h>
 
 //Motor Connections
 //Change this if you wish to use another diagram
@@ -18,25 +20,48 @@ Only supports forwards and backwards movement right now */
 #define In3 20 // A2
 #define In4 21 // A3
 
-float WHEEL_BASE = 0.3;
-float wanted_right = 0;
-float wanted_left = 0;
+float wheelBase = 0.24;
+float wheelDiameter = 0.08;
+float wantedRight = 0;
+float wantedLeft = 0;
+
+// Target speed in rps
+double Setpoint_Left;
+double Setpoint_Right;
+
+// What is read from encoder
+double Input_Left;
+double Input_Right;
+
+// What you output to motor
+double Output_Left;
+double Output_Right;
+
+double Kp = 40, Ki = 160, Kd = 7;
+String message;
+
+PID myPID_Left(&Input_Left, &Output_Left, &Setpoint_Left, Kp, Ki, Kd, DIRECT);
+PID myPID_Right(&Input_Right, &Output_Right, &Setpoint_Right, Kp, Ki, Kd, DIRECT);
+
+Encoder knobLeft(3, 8);
+Encoder knobRight(2, 7);
 
 ros::NodeHandle nh;
 
-float mapLinearVel(float speed)
-{
-  float max_speed = 1;
-  return (speed / max_speed) * 255.0;
-}
+long positionLeft = -999;
+long positionRight = -999;
+float leftVel = 0;
+float rightVel = 0;
+long lastVelTime = 0;
+long starttime = millis();
 
-float mapAngularVel(float speed)
+float convertAngularToLinear(float speed)
 {
-  float max_speed = 1;
-  return (speed / max_speed) * 255.0;
+  return speed * 3.1415926 * wheelDiameter;
 }
 
 ros::Subscriber<geometry_msgs::Twist> sub_vel("cmd_vel", messageCb);
+
 void setup()
 {
   // All motor control pins are outputs
@@ -46,6 +71,18 @@ void setup()
   pinMode(In2, OUTPUT);
   pinMode(In3, OUTPUT);
   pinMode(In4, OUTPUT);
+
+  digitalWrite(In1, HIGH);
+  digitalWrite(In2, LOW);
+
+  digitalWrite(In3, HIGH);
+  digitalWrite(In4, LOW);
+
+  myPID_Left.SetMode(AUTOMATIC);
+  myPID_Right.SetMode(AUTOMATIC);
+  myPID_Left.SetTunings(Kp, Ki, Kd);
+  myPID_Right.SetTunings(Kp, Ki, Kd);
+
   nh.getHardware()->setBaud(9600);
   nh.initNode();
   nh.subscribe(sub_vel);
@@ -53,30 +90,19 @@ void setup()
 
 void calculateWheelSpeed(float linear_velocity, float angular_velocity)
 {
-  float left_velocity = linear_velocity - (0.5f * angular_velocity * WHEEL_BASE * 6.6f);
-  // 1.54
-  float right_velocity = linear_velocity + (0.5f * angular_velocity * WHEEL_BASE * 6.6f);
-  // 0.44
+  float left_velocity = linear_velocity - (0.5f * angular_velocity * wheelBase);
+  float right_velocity = linear_velocity + (0.5f * angular_velocity * wheelBase);
 
-  float max_vel = 1.15;
-  if (left_velocity > 1.15f)
-  {
-    right_velocity = right_velocity / (left_velocity / 1.15f);
-    left_velocity = 1.15f;
-  }
-  if (right_velocity > 1.15f)
-  {
-    left_velocity = left_velocity / (right_velocity / 1.15f);
-    right_velocity = 1.15f;
-  }
+  wantedLeft = left_velocity;
+  Setpoint_Left = fabs(left_velocity);
 
-  wanted_left = (left_velocity / 1.15f) * 255.0f;
-  wanted_right = (right_velocity / 1.15f) * 255.0f;
+  wantedRight = right_velocity;
+  Setpoint_Right = fabs(right_velocity);
 }
 
 void goRobot()
 {
-  if (wanted_left > 0)
+  if (wantedLeft > 0)
   {
     digitalWrite(In1, HIGH);
     digitalWrite(In2, LOW);
@@ -88,7 +114,7 @@ void goRobot()
   }
 
   // motor Right
-  if (wanted_right > 0)
+  if (wantedRight > 0)
   {
     digitalWrite(In3, HIGH);
     digitalWrite(In4, LOW);
@@ -99,75 +125,24 @@ void goRobot()
     digitalWrite(In3, LOW);
   }
 
-  wanted_left = fabs(wanted_left);
-  analogWrite(EnA, wanted_left);
-  wanted_right = fabs(wanted_right);
-  analogWrite(EnB, wanted_right);
-}
-
-void goForwardLeft() { ; }
-void goBackwardRight() { ; }
-void goBackwardLeft() { ; }
-
-void goBackward(int speed) //run both motors in the same direction
-{
-  // turn on motor Left
-  digitalWrite(In2, HIGH);
-  digitalWrite(In1, LOW);
-  // set speed to 150 out 255
-  analogWrite(EnA, speed);
-  // turn on motor Right
-  digitalWrite(In4, HIGH);
-  digitalWrite(In3, LOW);
-  // set speed to 150 out 255
-  analogWrite(EnB, speed);
-}
-
-void goForward(int speed) //run both motors in the same direction
-{
-  // turn on motor Left
-  digitalWrite(In1, HIGH);
-  digitalWrite(In2, LOW);
-  // set speed to 150 out 255
-  analogWrite(EnA, speed);
-  // turn on motor Right
-  digitalWrite(In3, HIGH);
-  digitalWrite(In4, LOW);
-  // set speed to 150 out 255
-  analogWrite(EnB, speed);
-}
-
-void turnRight(int speed) //run both motors in the same direction
-{
-  // turn on motor Left
-  digitalWrite(In1, HIGH);
-  digitalWrite(In2, LOW);
-  // set speed to 150 out 255
-  analogWrite(EnA, speed);
-  // turn on motor Right
-  digitalWrite(In3, LOW);
-  digitalWrite(In4, HIGH);
-  // set speed to 150 out 255
-  analogWrite(EnB, speed);
-}
-
-void turnLeft(int speed) //run both motors in the same direction
-{
-  // turn on motor Left
-  digitalWrite(In1, LOW);
-  digitalWrite(In2, HIGH);
-  // set speed to 150 out 255
-  analogWrite(EnA, speed);
-  // turn on motor Right
-  digitalWrite(In3, HIGH);
-  digitalWrite(In4, LOW);
-  // set speed to 150 out 255
-  analogWrite(EnB, speed);
+  if (wantedLeft == 0.0 && wantedRight == 0.0)
+  {
+    digitalWrite(In1, LOW);
+    digitalWrite(In2, LOW);
+    digitalWrite(In3, LOW);
+    digitalWrite(In4, LOW);
+    analogWrite(EnA, 0);
+    analogWrite(EnB, 0);
+  }
+  else
+  {
+    analogWrite(EnA, Output_Left);
+    analogWrite(EnB, Output_Right);
+  }
 }
 
 void messageCb(const geometry_msgs::Twist &cmd_msg)
 {
-
   if (cmd_msg.linear.x == 0 && cmd_msg.angular.z == 0)
   {
     digitalWrite(In1, LOW);
@@ -177,46 +152,45 @@ void messageCb(const geometry_msgs::Twist &cmd_msg)
   }
   else
   {
-    if (cmd_msg.angular.z < 0.0 && cmd_msg.linear.x > 0.0)
-    {
-      calculateWheelSpeed(float(cmd_msg.linear.x), float(cmd_msg.angular.z));
-      goRobot();
-    }
-    else if (cmd_msg.angular.z > 0.0 && cmd_msg.linear.x > 0.0)
-    {
-      calculateWheelSpeed(float(cmd_msg.linear.x), float(cmd_msg.angular.z));
-      goRobot();
-    }
-    else if (cmd_msg.angular.z < 0.0 && cmd_msg.linear.x < 0.0)
-    {
-      calculateWheelSpeed(float(cmd_msg.linear.x), float(cmd_msg.angular.z));
-      goRobot();
-    }
-    else if (cmd_msg.angular.z > 0.0 && cmd_msg.linear.x < 0.0)
-    {
-      calculateWheelSpeed(float(cmd_msg.linear.x), float(cmd_msg.angular.z));
-      goRobot();
-    }
-    else if (cmd_msg.linear.x < 0.0)
-    {
-      goBackward(mapLinearVel(fabs(cmd_msg.linear.x)));
-    }
-    else if (cmd_msg.linear.x > 0.0)
-    {
-      goForward(mapLinearVel(fabs(cmd_msg.linear.x)));
-    }
-    else if (cmd_msg.angular.z > 0.0)
-    {
-      turnLeft(mapAngularVel(fabs(cmd_msg.angular.z)));
-    }
-    else if (cmd_msg.angular.z < 0.0)
-    {
-      turnRight(mapAngularVel(fabs(cmd_msg.angular.z)));
-    }
+    calculateWheelSpeed(float(cmd_msg.linear.x), float(cmd_msg.angular.z));
   }
+}
+
+void readEncoder()
+{
+  long newLeft, newRight;
+  newLeft = knobLeft.read();
+  newRight = knobRight.read();
+
+  if (millis() - lastVelTime > 100)
+  {
+
+    float newLeftFloat = float(newLeft);
+    float newRightFloat = float(newRight);
+
+    leftVel = fabs(((newLeftFloat / 1876.0f) / 0.1f));
+    rightVel = fabs(((newRightFloat / 1876.0f) / 0.1f));
+
+    knobLeft.write(0);
+    knobRight.write(0);
+
+    lastVelTime = millis();
+
+    Input_Right = convertAngularToLinear(rightVel);
+    Input_Left = convertAngularToLinear(leftVel);
+  };
+}
+
+void PIDLoop()
+{
+  myPID_Right.Compute();
+  myPID_Left.Compute();
 }
 
 void loop()
 {
   nh.spinOnce();
+  readEncoder();
+  PIDLoop();
+  goRobot();
 }
