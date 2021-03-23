@@ -1,7 +1,7 @@
 /* Arduino Pro Micro code to read ROS topic over serial and control motors
 Only supports forwards and backwards movement right now */
 
-#define USE_USBCON //  Very Important! Because Pro Micro has native USB
+//#define USE_USBCON //  Very Important! Because Pro Micro has native USB
 #include <ros.h>
 #include <geometry_msgs/Twist.h>
 #include <sensor_msgs/Range.h>
@@ -12,13 +12,14 @@ Only supports forwards and backwards movement right now */
 //Motor Connections
 //Change this if you wish to use another diagram
 #define EnA 5 // motor Left Speed PWM
-#define EnB 6 // motor Left Speed PWM
-// Left
-#define In1 18 // A0
-#define In2 19 // A1
-// Right
-#define In3 20 // A2
-#define In4 21 // A3
+#define EnB 6 // motor right Speed PWM
+#define In1 8
+#define In2 9
+#define In3 12 // A2
+#define In4 13 // A3
+
+Encoder knobRight(3, 4);
+Encoder knobLeft(2, 7);
 
 float wheelBase = 0.24;
 float wheelDiameter = 0.08;
@@ -37,14 +38,14 @@ double Input_Right;
 double Output_Left;
 double Output_Right;
 
-double Kp = 40, Ki = 160, Kd = 7;
+double Kp = 90, Ki = 180, Kd = 10;
 String message;
+
+double raw_lin = 0;
+double raw_rot = 0;
 
 PID myPID_Left(&Input_Left, &Output_Left, &Setpoint_Left, Kp, Ki, Kd, DIRECT);
 PID myPID_Right(&Input_Right, &Output_Right, &Setpoint_Right, Kp, Ki, Kd, DIRECT);
-
-Encoder knobLeft(3, 8);
-Encoder knobRight(2, 7);
 
 ros::NodeHandle nh;
 
@@ -54,12 +55,16 @@ float leftVel = 0;
 float rightVel = 0;
 long lastVelTime = 0;
 long starttime = millis();
+long ultrasonicDistance = 0;
+
+int MODE = 0;
 
 float convertAngularToLinear(float speed)
 {
   return speed * 3.1415926 * wheelDiameter;
 }
 
+//ros::NodeHandle_<ArduinoHardware, 25, 25, 360, 360> nh;
 ros::Subscriber<geometry_msgs::Twist> sub_vel("cmd_vel", messageCb);
 
 void setup()
@@ -83,7 +88,7 @@ void setup()
   myPID_Left.SetTunings(Kp, Ki, Kd);
   myPID_Right.SetTunings(Kp, Ki, Kd);
 
-  nh.getHardware()->setBaud(9600);
+  nh.getHardware()->setBaud(57600);
   nh.initNode();
   nh.subscribe(sub_vel);
 }
@@ -125,7 +130,7 @@ void goRobot()
     digitalWrite(In3, LOW);
   }
 
-  if (wantedLeft == 0.0 && wantedRight == 0.0)
+  if (fabs(raw_lin) < 0.02 && fabs(raw_rot) < 0.02)
   {
     digitalWrite(In1, LOW);
     digitalWrite(In2, LOW);
@@ -133,6 +138,15 @@ void goRobot()
     digitalWrite(In4, LOW);
     analogWrite(EnA, 0);
     analogWrite(EnB, 0);
+
+    Output_Left = 0.0;
+    Output_Right = 0.0;
+
+    Setpoint_Left = 0.0;
+    Setpoint_Right = 0.0;
+
+    Input_Left = 0.0;
+    Input_Right = 0.0;
   }
   else
   {
@@ -143,7 +157,7 @@ void goRobot()
 
 void messageCb(const geometry_msgs::Twist &cmd_msg)
 {
-  if (cmd_msg.linear.x == 0 && cmd_msg.angular.z == 0)
+  if (cmd_msg.linear.x == 0.0 && cmd_msg.angular.z == 0.0)
   {
     digitalWrite(In1, LOW);
     digitalWrite(In2, LOW);
@@ -154,6 +168,8 @@ void messageCb(const geometry_msgs::Twist &cmd_msg)
   {
     calculateWheelSpeed(float(cmd_msg.linear.x), float(cmd_msg.angular.z));
   }
+  raw_lin = double(cmd_msg.linear.x);
+  raw_rot = double(cmd_msg.angular.z);
 }
 
 void readEncoder()
@@ -181,16 +197,103 @@ void readEncoder()
   };
 }
 
+void measureUltrasonicDistance() {}
+
 void PIDLoop()
 {
   myPID_Right.Compute();
   myPID_Left.Compute();
 }
 
+void PIDPrep()
+{
+  if (fabs(raw_lin) < 0.02 && fabs(raw_rot) < 0.02)
+  {
+    Output_Left = 0.0;
+    Output_Right = 0.0;
+
+    Setpoint_Left = 0.0;
+    Setpoint_Right = 0.0;
+
+    Input_Left = 0.0;
+    Input_Right = 0.0;
+  }
+}
+
+void setMode()
+{
+  // Read ultrasonic sensor if less than 15cm
+  // set mode to 2
+}
+
+long clockwiseRight = 0;
+long clockwiseLeft = 0;
+long antiClockwiseRight = 0;
+long antiClockwiseLeft = 0;
+
+void calculateSize()
+{
+  bool exitFlag = false;
+  digitalWrite(In1, HIGH);
+  digitalWrite(In2, LOW);
+  digitalWrite(In3, LOW);
+  digitalWrite(In4, HIGH);
+
+  Setpoint_Left = 0.1;
+  Setpoint_Right = 0.1;
+  knobLeft.write(0);
+  knobRight.write(0);
+
+  while (!exitFlag)
+  {
+    PIDLoop();
+    measureUltrasonicDistance();
+    if (ultrasonicDistance > 100)
+    {
+      digitalWrite(In1, LOW);
+      digitalWrite(In2, LOW);
+      digitalWrite(In3, LOW);
+      digitalWrite(In4, LOW);
+      clockwiseLeft = knobLeft.read();
+      clockwiseRight = knobRight.read();
+      knobLeft.write(0);
+      knobRight.write(0);
+      exitFlag = true;
+    }
+  }
+  exitFlag = false;
+  digitalWrite(In1, LOW);
+  digitalWrite(In2, HIGH);
+  digitalWrite(In3, HIGH);
+  digitalWrite(In4, LOW);
+  {
+    PIDLoop();
+    measureUltrasonicDistance();
+    if (ultrasonicDistance > 100)
+    {
+      digitalWrite(In1, LOW);
+      digitalWrite(In2, LOW);
+      digitalWrite(In3, LOW);
+      digitalWrite(In4, LOW);
+      clockwiseLeft = knobLeft.read();
+      clockwiseRight = knobRight.read();
+      knobLeft.write(0);
+      knobRight.write(0);
+      exitFlag = true;
+    }
+  }
+
+}
+
 void loop()
 {
-  nh.spinOnce();
-  readEncoder();
-  PIDLoop();
-  goRobot();
+  setmode();
+  if (MODE == 1)
+  {
+    nh.spinOnce();
+    readEncoder();
+    PIDPrep();
+    PIDLoop();
+    goRobot();
+  }
 }
