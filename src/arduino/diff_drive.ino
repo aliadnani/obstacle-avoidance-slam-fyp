@@ -15,11 +15,16 @@ Only supports forwards and backwards movement right now */
 #define EnB 6 // motor right Speed PWM
 #define In1 8
 #define In2 9
-#define In3 12 // A2
-#define In4 13 // A3
+#define In3 12     // A2
+#define In4 13     // A3
+#define echoPin 10 // attach pin D2 Arduino to pin Echo of HC-SR04
+#define trigPin 11 //attach pin D3 Arduino to pin Trig of HC-SR04
 
 Encoder knobRight(3, 4);
 Encoder knobLeft(2, 7);
+
+double lastEncoderLeft = 0;
+double lastEncoderRight = 0;
 
 float wheelBase = 0.24;
 float wheelDiameter = 0.08;
@@ -57,7 +62,10 @@ long lastVelTime = 0;
 long starttime = millis();
 long ultrasonicDistance = 0;
 
-int MODE = 0;
+int MODE = 1;
+
+long duration; // variable for the duration of sound wave travel
+long distance; // variable for the distance measurement
 
 float convertAngularToLinear(float speed)
 {
@@ -76,6 +84,8 @@ void setup()
   pinMode(In2, OUTPUT);
   pinMode(In3, OUTPUT);
   pinMode(In4, OUTPUT);
+  pinMode(trigPin, OUTPUT); // Sets the trigPin as an OUTPUT
+  pinMode(echoPin, INPUT);  // Sets the echoPin as an INPUT
 
   digitalWrite(In1, HIGH);
   digitalWrite(In2, LOW);
@@ -174,12 +184,13 @@ void messageCb(const geometry_msgs::Twist &cmd_msg)
 
 void readEncoder()
 {
-  long newLeft, newRight;
-  newLeft = knobLeft.read();
-  newRight = knobRight.read();
 
   if (millis() - lastVelTime > 100)
   {
+    long newLeft, newRight;
+
+    newLeft = knobLeft.read() - lastEncoderLeft;
+    newRight = knobRight.read() - lastEncoderRight;
 
     float newLeftFloat = float(newLeft);
     float newRightFloat = float(newRight);
@@ -187,17 +198,29 @@ void readEncoder()
     leftVel = fabs(((newLeftFloat / 1876.0f) / 0.1f));
     rightVel = fabs(((newRightFloat / 1876.0f) / 0.1f));
 
-    knobLeft.write(0);
-    knobRight.write(0);
+    // knobLeft.write(0);
+    // knobRight.write(0);
 
     lastVelTime = millis();
 
     Input_Right = convertAngularToLinear(rightVel);
     Input_Left = convertAngularToLinear(leftVel);
+
+    lastEncoderLeft = knobLeft.read();
+    lastEncoderRight = knobRight.read();
   };
 }
 
-void measureUltrasonicDistance() {}
+void measureUltrasonicDistance()
+{
+  digitalWrite(trigPin, LOW);
+  delayMicroseconds(2);
+  digitalWrite(trigPin, HIGH);
+  delayMicroseconds(10);
+  digitalWrite(trigPin, LOW);
+  duration = pulseIn(echoPin, HIGH);
+  distance = duration * 0.034 / 2; // Speed of sound wave divided by 2 (go and back)
+}
 
 void PIDLoop()
 {
@@ -220,10 +243,60 @@ void PIDPrep()
   }
 }
 
+void PIDPrepForce()
+{
+  Output_Left = 0.0;
+  Output_Right = 0.0;
+
+  Setpoint_Left = 0.0;
+  Setpoint_Right = 0.0;
+
+  Input_Left = 0.0;
+  Input_Right = 0.0;
+}
+
+int counter = 0;
+
 void setMode()
 {
   // Read ultrasonic sensor if less than 15cm
   // set mode to 2
+  measureUltrasonicDistance();
+  if (MODE == 1 && distance < 25)
+  {
+    // if (counter < 10)
+    // {
+    //   counter++;
+    // }
+
+    // else
+    // {
+
+    digitalWrite(In1, LOW);
+    digitalWrite(In2, LOW);
+    digitalWrite(In3, LOW);
+    digitalWrite(In4, LOW);
+    analogWrite(EnA, 0);
+    analogWrite(EnB, 0);
+
+    myPID_Left.SetMode(MANUAL);
+    myPID_Right.SetMode(MANUAL);
+
+    delay(1000);
+    readEncoder();
+
+    PIDPrepForce();
+    PIDLoop();
+    myPID_Right.SetMode(AUTOMATIC);
+    myPID_Left.SetMode(AUTOMATIC);
+
+    MODE = 2;
+  }
+  // }
+  // else
+  // {
+  //   counter = 0;
+  // }
 }
 
 long clockwiseRight = 0;
@@ -231,63 +304,118 @@ long clockwiseLeft = 0;
 long antiClockwiseRight = 0;
 long antiClockwiseLeft = 0;
 
+bool exitFlag = false;
+
 void calculateSize()
 {
-  bool exitFlag = false;
+  // bool exitFlag = false;
   digitalWrite(In1, HIGH);
   digitalWrite(In2, LOW);
   digitalWrite(In3, LOW);
   digitalWrite(In4, HIGH);
 
-  Setpoint_Left = 0.1;
-  Setpoint_Right = 0.1;
-  knobLeft.write(0);
-  knobRight.write(0);
+  Setpoint_Left = 0.05;
+  Setpoint_Right = 0.05;
+  // knobLeft.write(0);
+  // knobRight.write(0);
+  readEncoder();
+  PIDLoop();
+  analogWrite(EnA, Output_Left);
+  analogWrite(EnB, Output_Right);
 
   while (!exitFlag)
   {
-    PIDLoop();
     measureUltrasonicDistance();
-    if (ultrasonicDistance > 100)
+    readEncoder();
+    PIDLoop();
+    analogWrite(EnA, Output_Left);
+    analogWrite(EnB, Output_Right);
+
+    if (distance > 40)
     {
       digitalWrite(In1, LOW);
       digitalWrite(In2, LOW);
       digitalWrite(In3, LOW);
       digitalWrite(In4, LOW);
-      clockwiseLeft = knobLeft.read();
-      clockwiseRight = knobRight.read();
-      knobLeft.write(0);
-      knobRight.write(0);
+      // clockwiseLeft = knobLeft.read();
+      // clockwiseRight = knobRight.read();
+      // knobLeft.write(0);
+      // knobRight.write(0);
       exitFlag = true;
+      myPID_Left.SetMode(MANUAL);
+      myPID_Right.SetMode(MANUAL);
+
+      delay(1000);
+      readEncoder();
+
+      PIDPrepForce();
+      PIDLoop();
+      myPID_Right.SetMode(AUTOMATIC);
+      myPID_Left.SetMode(AUTOMATIC);
     }
   }
+
+
   exitFlag = false;
   digitalWrite(In1, LOW);
   digitalWrite(In2, HIGH);
   digitalWrite(In3, HIGH);
   digitalWrite(In4, LOW);
-  {
-    PIDLoop();
-    measureUltrasonicDistance();
-    if (ultrasonicDistance > 100)
+    while (distance > 40)
     {
+      measureUltrasonicDistance();
+      readEncoder();
+      Setpoint_Left = 0.05;
+      Setpoint_Right = 0.05;
+
+      PIDLoop();
+      analogWrite(EnA, Output_Left);
+      analogWrite(EnB, Output_Right);
+    }
+    delay(1500);
+    measureUltrasonicDistance();
+    while (distance < 60)
+    {
+      measureUltrasonicDistance();
+      readEncoder();
+      Setpoint_Left = 0.05;
+      Setpoint_Right = 0.05;
+
+      PIDLoop();
+      analogWrite(EnA, Output_Left);
+      analogWrite(EnB, Output_Right);
+    }
+    while (1)
+    {
+      measureUltrasonicDistance();
       digitalWrite(In1, LOW);
       digitalWrite(In2, LOW);
       digitalWrite(In3, LOW);
       digitalWrite(In4, LOW);
-      clockwiseLeft = knobLeft.read();
-      clockwiseRight = knobRight.read();
-      knobLeft.write(0);
-      knobRight.write(0);
-      exitFlag = true;
+      analogWrite(EnA, 0);
+      analogWrite(EnB, 0);
     }
-  }
-
+  // {
+  //   PIDLoop();
+  //   measureUltrasonicDistance();
+  //   if (ultrasonicDistance > 100)
+  //   {
+  //     digitalWrite(In1, LOW);
+  //     digitalWrite(In2, LOW);
+  //     digitalWrite(In3, LOW);
+  //     digitalWrite(In4, LOW);
+  //     clockwiseLeft = knobLeft.read();
+  //     clockwiseRight = knobRight.read();
+  //     knobLeft.write(0);
+  //     knobRight.write(0);
+  //     exitFlag = true;
+  //   }
+  // }
 }
 
 void loop()
 {
-  setmode();
+  setMode();
   if (MODE == 1)
   {
     nh.spinOnce();
@@ -295,5 +423,9 @@ void loop()
     PIDPrep();
     PIDLoop();
     goRobot();
+  }
+  else
+  {
+    calculateSize();
   }
 }
